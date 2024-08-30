@@ -4,13 +4,14 @@ from selenium import webdriver
 from selenium.webdriver import ActionChains
 from selenium.webdriver.common.by import By
 
-def webMdCrawler():
+
+def webmd_crawler(doctor_name):
     options = webdriver.ChromeOptions()
     options.accept_insecure_certs = True
     driver = webdriver.Chrome(options)
-    site ='webmd'
+    site = 'webmd'
     try:
-        find_doctor(driver)
+        find_doctor(driver, doctor_name)
 
         driver.implicitly_wait(3)
 
@@ -27,11 +28,10 @@ def webMdCrawler():
                                            + '.overall .overall-rating .rating-subheader')
 
         showAll = doctorInfo.find_elements(By.CSS_SELECTOR,
-                                 '.provider-location-info .provider-office-info .card .basecard-container .basecard-content .provider-location-url')
+                                           '.provider-location-info .provider-office-info .card .basecard-container .basecard-content .provider-location-url')
 
         if len(showAll) > 0:
             driver.execute_script("arguments[0].click();", showAll[0])
-
 
         driver.implicitly_wait(1)
         providerLocations = doctorInfo.find_elements(By.CSS_SELECTOR,
@@ -40,7 +40,7 @@ def webMdCrawler():
         doctor_name = nameElement.text
         print('Doctor - ' + nameElement.text)
 
-        print(' Provider Locations - '+str(len(providerLocations)))
+        print(' Provider Locations - ' + str(len(providerLocations)))
         print(' ')
         for location in providerLocations:
 
@@ -66,7 +66,7 @@ def webMdCrawler():
         for review in reviews:
             ratingName = review.find_element(By.CSS_SELECTOR, '.rating-name')
             rating = review.find_element(By.CSS_SELECTOR, '.rating-value')
-            entry = [doctor_name,site, ratingName.text, rating.text]
+            entry = [doctor_name, site, ratingName.text, rating.text]
             ratings_list.append(entry)
             print(ratingName.text + " - " + str(rating.text))
 
@@ -79,12 +79,13 @@ def webMdCrawler():
         print(str(ex))
 
     driver.close()
-def find_doctor(driver):
 
+
+def find_doctor(driver, doctor):
     # name = 'Dr. Bobby Brice Niemann'
     name = 'Bobby Brice Niemann'
     #name = 'James V Stonecipher'
-    name_split = name.split(' ')
+    name_split = doctor.split(' ')
     specialisation = 'neurology'
     try:
 
@@ -94,14 +95,14 @@ def find_doctor(driver):
                                         '#app #app .webmd-header .header-paddingbottom .search-wrapper .search-form .search-on-desktop')
         search = searchBox.find_element(By.CSS_SELECTOR,
                                         '.search-input .webmd-typeahead2 .webmd-input__div .webmd-input__inner')
-        search.send_keys(name)
+        search.send_keys(doctor)
         search.submit()
         driver.implicitly_wait(3)
         search_result = driver.find_elements(By.CSS_SELECTOR,
                                              '#app .webmd-container .page-mb .webmd-row .webmd-col .page-skwebmdton .serp-srl-layout .webmd-row .result-column .infinite-loader .resultslist-content .basic  ')
 
         profile_cards = []
-        doctors_list= []
+        doctors_list = []
         print('search results count - ' + str(len(search_result)))
         for row in search_result:
 
@@ -115,7 +116,6 @@ def find_doctor(driver):
                 print('found the card')
                 break
 
-
         print('search results count - ' + str(len(profile_cards)))
         print(doctors_list)
         #print([row.find_element(By.CSS_SELECTOR, '.prov-name-wrap .prov-name').text for row in profile_cards if len(row)> 0])
@@ -126,4 +126,3 @@ def find_doctor(driver):
 
     except Exception as ex:
         print(str(ex))
-

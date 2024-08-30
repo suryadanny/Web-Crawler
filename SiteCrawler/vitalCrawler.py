@@ -5,25 +5,29 @@ from selenium.webdriver.common.by import By
 from threading import Lock, Thread
 from concurrent.futures import ThreadPoolExecutor
 
+
 def vital(doctor_list, config):
-    thread_pool_size= config.get('thread-pool-size').data
-    chunk_size= config.get('chunk-size').data
+    thread_pool_size = int(config.get('thread-pool-size').data)
+    chunk_size = int(config.get('chunk-size').data)
     print(thread_pool_size)
     print(chunk_size)
-    num_chunks = (len(doctor_list)/thread_pool_size)+1
-    chunks_per_thread = 1 if num_chunks/ thread_pool_size == 0 else num_chunks/thread_pool_size
-    chunks = (len(doctor_list)/thread_pool_size)+1
-    chunked_lists = []
-    for i in range(chunks):
-        chunked_lists.append(doctor_list[i*thread_pool_size : min((i+1)*thread_pool_size,len(doctor_list))])
+    batch_size = thread_pool_size * chunk_size
+    num_batches = (len(doctor_list) / batch_size) + (1 if len(doctor_list) % batch_size != 0 else 0)
 
-    with ThreadPoolExecutor(thread_pool_size) as pool:
-        for chunk in chunked_lists:
-            for doctor in chunk:
-                pool.map(vitalCrawler,doctor)
+    for i in range(num_batches):
+        to_be_scraped = doctor_list[i * batch_size:min((i + 1) * batch_size, len(doctor_list))]
+        tasks = []
+        for thread in range(thread_pool_size):
+            doc_chunk = to_be_scraped[thread * chunk_size:min((thread + 1) * chunk_size, len(to_be_scraped))]
+            if (thread + 1) * chunk_size >= len(to_be_scraped):
+                print('task chunking ended the batch')
+                break
+
+        with ThreadPoolExecutor(thread_pool_size) as pool:
+            pool.map(vital_crawler, tasks)
 
 
-def vitalCrawler(doctor_name):
+def vital_crawler(doctor_name):
     print(__name__)
     options = webdriver.ChromeOptions()
     options.accept_insecure_certs = True
