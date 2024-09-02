@@ -4,6 +4,9 @@ from selenium import webdriver
 from selenium.webdriver.common.by import By
 from threading import Lock, Thread
 from concurrent.futures import ThreadPoolExecutor
+from threading import Lock
+
+file_lock = Lock()
 
 
 def vital(doctor_list, config):
@@ -28,14 +31,20 @@ def vital(doctor_list, config):
 
 
 def vital_crawler(doctor_name):
-    print(__name__)
+    print(doctor_name)
     options = webdriver.ChromeOptions()
     options.accept_insecure_certs = True
     driver = webdriver.Chrome(options)
     site = 'vital'
     try:
 
-        find_doctor(driver, doctor_name)
+        status = find_doctor(driver, doctor_name)
+
+        if not status:
+            print('couldn\'t find doctor : {} in {}'.format(doctor_name, site))
+            with file_lock:
+                write_failed([doctor_name,'couldn\'t find doctor : {} in {}'.format(doctor_name, site)])
+            return
 
         driver.implicitly_wait(3)
 
@@ -91,11 +100,6 @@ def vital_crawler(doctor_name):
                 loc.append('-')
             locations_list.append(loc)
 
-        with open('locations.csv', 'a', newline='') as csvfile:
-            csv_writer = csv.writer(csvfile,
-                                    quotechar='"', quoting=csv.QUOTE_ALL)
-            csv_writer.writerows(locations_list)
-
         print('---------------------------------')
         reviews_list = []
         for review in reviews:
@@ -104,12 +108,6 @@ def vital_crawler(doctor_name):
             reviews_list.append([doctor_name, site, review_date.text, review_text.text])
             print(review_date.text + " - " + review_text.text)
 
-        with open('reviews.csv', 'a', newline='') as csvfile:
-            csv_writer = csv.writer(csvfile,
-                                    quotechar='"', quoting=csv.QUOTE_ALL)
-            csv_writer.writerows(reviews_list)
-
-        reviews_list.clear()
         print('Ratings Summary')
         ratings_list = []
         ratings = doctorInfo.find_elements(By.CSS_SELECTOR,
@@ -123,16 +121,40 @@ def vital_crawler(doctor_name):
             ratings_list.append([doctor_name, site, rating_text.text, rating_score.text])
             print(rating_text.text + ' - ' + rating_score.text)
 
-        with open('ratings.csv', 'a', newline='') as csvfile:
-            csv_writer = csv.writer(csvfile,
-                                    quotechar='"', quoting=csv.QUOTE_ALL)
-            csv_writer.writerows(ratings_list)
+        with file_lock:
+            print('acquired lock')
+            write_to_file(locations_list, reviews_list, ratings_list)
+
+
 
 
     except Exception as ex:
         print(str(ex))
+        with file_lock:
+            write_failed([doctor_name, 'retryable error like timeout'])
 
     driver.close()
+
+def write_failed(row):
+    with open('failed_scrape.csv', 'a', newline='') as csvfile:
+        csv_writer = csv.writer(csvfile,
+                                quotechar='"', quoting=csv.QUOTE_ALL)
+        csv_writer.writerow(row)
+def write_to_file(locations_list, reviews_list, ratings_list):
+    with open('ratings.csv', 'a', newline='') as csvfile:
+        csv_writer = csv.writer(csvfile,
+                                quotechar='"', quoting=csv.QUOTE_ALL)
+        csv_writer.writerows(ratings_list)
+
+    with open('reviews.csv', 'a', newline='') as csvfile:
+        csv_writer = csv.writer(csvfile,
+                                quotechar='"', quoting=csv.QUOTE_ALL)
+        csv_writer.writerows(reviews_list)
+
+    with open('locations.csv', 'a', newline='') as csvfile:
+        csv_writer = csv.writer(csvfile,
+                                quotechar='"', quoting=csv.QUOTE_ALL)
+        csv_writer.writerows(locations_list)
 
 
 def find_doctor(web_driver, doctor):
@@ -183,7 +205,8 @@ def find_doctor(web_driver, doctor):
 
         doctor_link = profile_cards[0].find_element(By.CSS_SELECTOR, '.card-info .overlay-card-link')
         driver.execute_script("arguments[0].click();", doctor_link)
-
+        return True
 
     except Exception as ex:
         print(str(ex))
+        return False

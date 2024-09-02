@@ -3,15 +3,26 @@ import csv
 from selenium import webdriver
 from selenium.webdriver import ActionChains
 from selenium.webdriver.common.by import By
+from threading import Lock
 
+file_lock = Lock()
 
-def webmd_crawler(doctor_name):
+def webmd_crawler(doctor_row):
+    attributes = doctor_row.split(',')
+    npi_id = attributes[0]
+    doctor_name = attributes[1]
     options = webdriver.ChromeOptions()
     options.accept_insecure_certs = True
     driver = webdriver.Chrome(options)
     site = 'webmd'
     try:
-        find_doctor(driver, doctor_name)
+        status, stat_code = find_doctor(driver, attributes)
+        if not status:
+            print('couldn\'t find doctor : {} in {} site '.format(doctor_name,site))
+            stat_reason = 'couldn\'t find doctor : {} in {}'.format(doctor_name, site) if stat_code == 0 else 'retryable'
+            with file_lock:
+                write_failed([npi_id,doctor_name,stat_reason])
+            return
 
         driver.implicitly_wait(3)
 
@@ -70,23 +81,42 @@ def webmd_crawler(doctor_name):
             ratings_list.append(entry)
             print(ratingName.text + " - " + str(rating.text))
 
-        with open('ratings.csv', 'a', newline='') as csvfile:
-            csv_writer = csv.writer(csvfile,
-                                    quotechar='"', quoting=csv.QUOTE_ALL)
-            csv_writer.writerows(ratings_list)
+        with file_lock:
+            write_to_file(ratings_list)
+
 
     except Exception as ex:
         print(str(ex))
+        with file_lock:
+            write_failed([npi_id,doctor_name, 'retryable error like timeout'])
 
     driver.close()
+
+
+
+def write_failed(row):
+    with open('failed_scrape.csv', 'a', newline='') as csvfile:
+        csv_writer = csv.writer(csvfile,
+                                quotechar='"', quoting=csv.QUOTE_ALL)
+        csv_writer.writerow(row)
+
+
+def write_to_file(ratings_list):
+    with open('ratings.csv', 'a', newline='') as csvfile:
+        csv_writer = csv.writer(csvfile,
+                                quotechar='"', quoting=csv.QUOTE_ALL)
+        csv_writer.writerows(ratings_list)
+
 
 
 def find_doctor(driver, doctor):
     # name = 'Dr. Bobby Brice Niemann'
     name = 'Bobby Brice Niemann'
     #name = 'James V Stonecipher'
-    name_split = doctor.split(' ')
-    specialisation = 'neurology'
+    name_split = doctor[1].split(' ')
+    cities = doctor[3].split(',')
+
+    specialisation = doctor[2].split(',')
     try:
 
         driver.get(
@@ -122,7 +152,10 @@ def find_doctor(driver, doctor):
 
         doctor_link = profile_cards[0].find_element(By.CSS_SELECTOR, '.prov-name-wrap .prov-name')
         driver.execute_script("arguments[0].click();", doctor_link)
-
+        return True, 1
 
     except Exception as ex:
         print(str(ex))
+        print(type(ex))
+        stat_code = 2 if 'disconnected:' in str(ex) else 0
+        return False, stat_code

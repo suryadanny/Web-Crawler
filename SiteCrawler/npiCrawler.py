@@ -32,6 +32,7 @@ def npi_detail_fetcher(configs):
         print('Batch Run- {}'.format(i))
         to_be_processed = filtered_npi_list[i * batch_size:min((i + 1) * batch_size, final_npi_list_size)]
         row_list = []
+        nurse_list = []
         failed_ids = []
         try:
             with ThreadPoolExecutor(thread_pool_size) as pool:
@@ -49,13 +50,20 @@ def npi_detail_fetcher(configs):
                 # print(tasks)
                 for future_result in pool.map(fetch_details_npi_api, tasks):
                     row_list.extend(future_result[0])
-                    failed_ids.extend(future_result[1])
+                    nurse_list.extend(future_result[1])
+                    failed_ids.extend(future_result[2])
                     #print(future_result)
 
                 with open(doctors_file, 'a', newline='') as csvfile:
                     csv_writer = csv.writer(csvfile,
                                             quotechar='"', quoting=csv.QUOTE_ALL)
                     csv_writer.writerows(row_list)
+
+                with open('nurse_list.csv', 'a', newline='') as csvfile:
+                    csv_writer = csv.writer(csvfile,
+                                            quotechar='"', quoting=csv.QUOTE_ALL)
+                    csv_writer.writerows(nurse_list)
+
                 print(failed_ids)
 
                 with open('failed.csv', 'a', newline='') as csvfile:
@@ -75,7 +83,8 @@ def fetch_details_npi_api(args):
     npi_ids, api, doctor_file = args
     failed_npi_ids = []
 
-    row_list = []
+    doctor_list = []
+    nurse_list = []
     for npi_id in npi_ids:
         if len(npi_id.strip()) < 10 or not npi_id.strip().isnumeric():
             failed_npi_ids.append([npi_id.strip(),'npi id less than 10 digits or not numeric'])
@@ -103,8 +112,12 @@ def fetch_details_npi_api(args):
                     failed_npi_ids.append([npi_id.strip(),'npi belongs to organisation'])
                     continue
 
-                if 'name_prefix' not in details:
-                    reason = response_json['results'][0]['taxonomies'][0]['desc'] if 'taxonomies' in response_json['results'][0] else 'could not identify'
+                name_prefix = details['name_prefix'] if 'name_prefix' in details else ''
+                credentials = details['credential'] if 'credential' in details else ''
+                taxonomy = response_json['results'][0]['taxonomies'][0]['desc'].lower() if 'taxonomies' in response_json['results'][0] else ''
+
+                if ( 'dr' not in name_prefix.lower()) and ( 'md' not in credentials.lower()) and ( 'nurse' not in taxonomy.lower()):
+                    reason = taxonomy if len(taxonomy) > 0 else 'could not identify'
                     failed_npi_ids.append([npi_id.strip(),reason])
                     continue
 
@@ -115,17 +128,24 @@ def fetch_details_npi_api(args):
                 if 'last_name' in details:
                     name += " " + details['last_name']
 
-                row = [npi_id.strip(), name.strip()]
-                row_list.append(row)
+                cities = set()
+                if 'addresses' in response_json['results'][0]:
+                    cities = {address['city'] for address in response_json['results'][0]['addresses'] if 'city' in address}
+
+                if ('dr' in name_prefix.lower()) or ('md' in credentials.lower()):
+                    doctor_list.append([npi_id.strip(), name.strip(), taxonomy, ','.join(cities)])
+                elif 'nurse' in taxonomy:
+                    nurse_list.append([npi_id.strip(), name.strip(), taxonomy, ','.join(cities)])
+
             else:
                 print('error occurred during GET request for npi id {} '.format(npi_id))
-            time.sleep(0.75)
+            time.sleep(0.60)
 
         except Exception as ex:
             print(str(ex))
             print("error occurred while fetching details for npi id : {} ".format(npi_id))
     print('failed npi ids  - {}'.format(failed_npi_ids))
-    return row_list, failed_npi_ids
+    return doctor_list, nurse_list, failed_npi_ids
     # lock.acquire()
     # print('lock acquired')
     # with open(doctor_file, 'a') as csvfile:
@@ -142,7 +162,12 @@ def prep_doctor_list(file_name):
     with open(file_name, 'a', newline='') as csvfile:
         csv_writer = csv.writer(csvfile,
                                 quotechar='"', quoting=csv.QUOTE_ALL)
-        csv_writer.writerow(['npi_id','doctor_name'])
+        csv_writer.writerow(['npi_id','doctor_name', 'specialisation', 'cities'])
+
+    with open('nurse_list.csv', 'a', newline='') as csvfile:
+        csv_writer = csv.writer(csvfile,
+                                quotechar='"', quoting=csv.QUOTE_ALL)
+        csv_writer.writerow(['npi_id','nurse_name', 'specialisation', 'cities'])
 
     with open('failed.csv', 'a', newline='') as csvfile:
         csv_writer = csv.writer(csvfile,
