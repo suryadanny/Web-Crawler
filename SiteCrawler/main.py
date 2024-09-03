@@ -77,13 +77,13 @@ def get_properties():
 
 if __name__ == '__main__':
     print("starting  crawler")
-    #start_crawling()
-    try:
-        print('stra'+90)
-    except Exception as ex:
-        print(type(ex).__name__)
-        print(str(ex))
-        print(type(ex))
+    start_crawling()
+    # try:
+    #     print('stra'+90)
+    # except Exception as ex:
+    #     print(type(ex).__name__)
+    #     print(str(ex))
+    #     print(type(ex))
 
     print('webmd crawler')
 

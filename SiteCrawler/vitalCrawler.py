@@ -30,20 +30,25 @@ def vital(doctor_list, config):
             pool.map(vital_crawler, tasks)
 
 
-def vital_crawler(doctor_name):
-    print(doctor_name)
+def vital_crawler(doctor_row):
+    print(doctor_row)
+    attributes = doctor_row.split(',')
+    npi_id = attributes[0]
+    doctor_name = attributes[1]
+    specialisation = attributes[2]
     options = webdriver.ChromeOptions()
     options.accept_insecure_certs = True
     driver = webdriver.Chrome(options)
     site = 'vital'
     try:
 
-        status = find_doctor(driver, doctor_name)
-
+        status, stat_code = find_doctor(driver, attributes)
         if not status:
-            print('couldn\'t find doctor : {} in {}'.format(doctor_name, site))
+            print('couldn\'t find doctor : {} in {} site '.format(doctor_name, site))
+            stat_reason = 'couldn\'t find doctor : {} in {}'.format(doctor_name,
+                                                                    site) if stat_code == 0 else 'retryable'
             with file_lock:
-                write_failed([doctor_name,'couldn\'t find doctor : {} in {}'.format(doctor_name, site)])
+                write_failed([npi_id, doctor_name, specialisation, attributes[3], site, stat_reason])
             return
 
         driver.implicitly_wait(3)
@@ -131,15 +136,18 @@ def vital_crawler(doctor_name):
     except Exception as ex:
         print(str(ex))
         with file_lock:
-            write_failed([doctor_name, 'retryable error like timeout'])
+            write_failed([npi_id, doctor_name, specialisation, attributes[3], site, 'retryable error like timeout'])
 
     driver.close()
+
 
 def write_failed(row):
     with open('failed_scrape.csv', 'a', newline='') as csvfile:
         csv_writer = csv.writer(csvfile,
                                 quotechar='"', quoting=csv.QUOTE_ALL)
         csv_writer.writerow(row)
+
+
 def write_to_file(locations_list, reviews_list, ratings_list):
     with open('ratings.csv', 'a', newline='') as csvfile:
         csv_writer = csv.writer(csvfile,
@@ -157,20 +165,15 @@ def write_to_file(locations_list, reviews_list, ratings_list):
         csv_writer.writerows(locations_list)
 
 
-def find_doctor(web_driver, doctor):
-    driver = None
-    if not web_driver:
-        options = webdriver.ChromeOptions()
-        options.accept_insecure_certs = True
-        driver = webdriver.Chrome(options)
-    else:
-        driver = web_driver
-
+def find_doctor(driver, doctor):
     # name = 'Dr. Bobby Brice Niemann'
-    name = 'Bobby Brice Niemann'
+    #name = 'Bobby Brice Niemann'
     #name = 'James V Stonecipher'
-    name_split = doctor.split(' ')
-    specialisation = 'neurology'
+    name_split = doctor[1].split(' ')
+
+    cities = doctor[3].split(',')
+
+    specialisation = set([spec.lower() for spec in doctor[2].split(',')])
     try:
 
         driver.get(
@@ -178,12 +181,27 @@ def find_doctor(web_driver, doctor):
         searchBox = driver.find_element(By.CSS_SELECTOR,
                                         '#app #app .top-wrapper .vitals-top-container .search-wrapper .search-bar .search-bar-wrapper')
         search = searchBox.find_element(By.CSS_SELECTOR,
-                                        '.search-input .webmd-input__div .webmd-input__inner')
-        search.send_keys(doctor)
-        search.submit()
+                                        '.name .webmd-input__div .webmd-input__inner')
+        #sending doctor name to the search box
+        search.send_keys(doctor[1])
+
+        #search.submit()
+
+        if len(cities) > 0:
+            city_search = searchBox.find_element(By.CSS_SELECTOR,
+                                                 '.location .webmd-input__div .webmd-input__inner')
+            city = cities[0] + ", TX"
+            city_search.send_keys(city)
+            city_search.submit()
+        else:
+            search.submit()
+
+
         driver.implicitly_wait(3)
         search_result = driver.find_elements(By.CSS_SELECTOR,
                                              '#app .webmd-col .webmd-container .webmd-main .webmd-row .webmd-col .infinite-loader .result-page .provider-card  ')
+
+
 
         profile_cards = []
         doctors_list = []
@@ -192,8 +210,10 @@ def find_doctor(web_driver, doctor):
 
             summary = row.text.splitlines()
             print(summary[0])
+            print(summary[2])
             # and specialisation.lower() in summary[2].lower()
-            if name_split[0].lower() in summary[0].lower() and name_split[-1].lower() in summary[0].lower():
+            if (name_split[0].lower() in summary[0].lower() and name_split[-1].lower() in summary[0].lower()
+                    and match_specs(summary[2], specialisation)):
                 profile = row.find_elements(By.CSS_SELECTOR,
                                             '.webmd-card .webmd-card__body .card-content')
                 profile_cards.append(profile[0])
@@ -205,8 +225,19 @@ def find_doctor(web_driver, doctor):
 
         doctor_link = profile_cards[0].find_element(By.CSS_SELECTOR, '.card-info .overlay-card-link')
         driver.execute_script("arguments[0].click();", doctor_link)
-        return True
+        return True, 1
 
     except Exception as ex:
         print(str(ex))
-        return False
+        print(type(ex))
+        stat_code = 2 if 'disconnected:' in str(ex) else 0
+        return False, stat_code
+
+
+def match_specs(summary, specs_set):
+    profile_specs = summary.split(',')
+    for spec in profile_specs:
+        if spec.strip().lower() in specs_set:
+            return True
+
+    return False

@@ -11,6 +11,7 @@ def webmd_crawler(doctor_row):
     attributes = doctor_row.split(',')
     npi_id = attributes[0]
     doctor_name = attributes[1]
+    specialisation = attributes[2]
     options = webdriver.ChromeOptions()
     options.accept_insecure_certs = True
     driver = webdriver.Chrome(options)
@@ -21,7 +22,7 @@ def webmd_crawler(doctor_row):
             print('couldn\'t find doctor : {} in {} site '.format(doctor_name,site))
             stat_reason = 'couldn\'t find doctor : {} in {}'.format(doctor_name, site) if stat_code == 0 else 'retryable'
             with file_lock:
-                write_failed([npi_id,doctor_name,stat_reason])
+                write_failed([npi_id,doctor_name, specialisation, attributes[3], site, stat_reason])
             return
 
         driver.implicitly_wait(3)
@@ -88,7 +89,7 @@ def webmd_crawler(doctor_row):
     except Exception as ex:
         print(str(ex))
         with file_lock:
-            write_failed([npi_id,doctor_name, 'retryable error like timeout'])
+            write_failed([npi_id,doctor_name,specialisation, attributes[3], site, 'retryable error like timeout'])
 
     driver.close()
 
@@ -116,7 +117,7 @@ def find_doctor(driver, doctor):
     name_split = doctor[1].split(' ')
     cities = doctor[3].split(',')
 
-    specialisation = doctor[2].split(',')
+    specialisation = set([spec.lower() for spec in doctor[2].split(',')])
     try:
 
         driver.get(
@@ -125,8 +126,18 @@ def find_doctor(driver, doctor):
                                         '#app #app .webmd-header .header-paddingbottom .search-wrapper .search-form .search-on-desktop')
         search = searchBox.find_element(By.CSS_SELECTOR,
                                         '.search-input .webmd-typeahead2 .webmd-input__div .webmd-input__inner')
-        search.send_keys(doctor)
-        search.submit()
+        search.send_keys(doctor[1])
+        #search.submit()
+
+        if len(cities) > 0:
+            city_search= searchBox.find_element(By.CSS_SELECTOR,
+                                        '.location-input .webmd-typeahead2 .webmd-input__div .webmd-input__inner')
+            city = cities[0] + ", TX"
+            city_search.send_keys(city)
+            city_search.submit()
+        else:
+            search.submit()
+
         driver.implicitly_wait(3)
         search_result = driver.find_elements(By.CSS_SELECTOR,
                                              '#app .webmd-container .page-mb .webmd-row .webmd-col .page-skwebmdton .serp-srl-layout .webmd-row .result-column .infinite-loader .resultslist-content .basic  ')
@@ -138,8 +149,10 @@ def find_doctor(driver, doctor):
 
             summary = row.text.splitlines()
             print(summary[1])
-            # and specialisation.lower() in summary[2].lower()
-            if name_split[0].lower() in summary[1].lower() and name_split[-1].lower() in summary[1].lower():
+            print(summary[2])
+            #profile_card_specs.lower() in summary[2].lower()
+            if (name_split[0].lower() in summary[1].lower() and name_split[-1].lower() in summary[1].lower()
+                    and match_specs(summary[2], specialisation)):
                 profile = row.find_elements(By.CSS_SELECTOR,
                                             '.results-card-wrap .webmd-card .webmd-card__body .webmd-row .nocardheight .webmd-col .card-info-wrap .card-content ')
                 profile_cards.append(profile[0])
@@ -159,3 +172,12 @@ def find_doctor(driver, doctor):
         print(type(ex))
         stat_code = 2 if 'disconnected:' in str(ex) else 0
         return False, stat_code
+
+
+def match_specs(summary, specs_set):
+    profile_specs = summary.split(',')
+    for spec in profile_specs:
+        if spec.strip().lower() in specs_set:
+            return True
+
+    return False

@@ -9,6 +9,7 @@ from threading import Lock
 
 def npi_detail_fetcher(configs):
     files_to_be_read = configs.get("npi_files").data.split(",")
+    credential_set = set(configs.get("credentials").data.split(","))
     npi_ids = set()
     for file_name in files_to_be_read:
         with open(file_name, 'r') as file:
@@ -41,7 +42,7 @@ def npi_detail_fetcher(configs):
 
                     tasks.append((to_be_processed[
                                   thread * chunk_size:min(len(to_be_processed), (thread + 1) * chunk_size)], api_url,
-                                  doctors_file))
+                                  credential_set))
 
                     if (thread+1)*chunk_size >= len(to_be_processed):
                         print('task ended')
@@ -80,7 +81,7 @@ def npi_detail_fetcher(configs):
 
 
 def fetch_details_npi_api(args):
-    npi_ids, api, doctor_file = args
+    npi_ids, api, credential_set = args
     failed_npi_ids = []
 
     doctor_list = []
@@ -116,7 +117,7 @@ def fetch_details_npi_api(args):
                 credentials = details['credential'] if 'credential' in details else ''
                 taxonomy = response_json['results'][0]['taxonomies'][0]['desc'].lower() if 'taxonomies' in response_json['results'][0] else ''
 
-                if ( 'dr' not in name_prefix.lower()) and ( 'md' not in credentials.lower()) and ( 'nurse' not in taxonomy.lower()):
+                if ( 'dr' not in name_prefix.lower()) and (credentials.lower() not in credential_set) and ( 'nurse' not in taxonomy.lower()):
                     reason = taxonomy if len(taxonomy) > 0 else 'could not identify'
                     failed_npi_ids.append([npi_id.strip(),reason])
                     continue
@@ -130,9 +131,9 @@ def fetch_details_npi_api(args):
 
                 cities = set()
                 if 'addresses' in response_json['results'][0]:
-                    cities = {address['city'] for address in response_json['results'][0]['addresses'] if 'city' in address}
+                    cities = {address['city'] for address in response_json['results'][0]['addresses'] if address['state'] == 'TX'}
 
-                if ('dr' in name_prefix.lower()) or ('md' in credentials.lower()):
+                if ('dr' in name_prefix.lower()) or (credentials.lower() not in credential_set):
                     doctor_list.append([npi_id.strip(), name.strip(), taxonomy, ','.join(cities)])
                 elif 'nurse' in taxonomy:
                     nurse_list.append([npi_id.strip(), name.strip(), taxonomy, ','.join(cities)])
