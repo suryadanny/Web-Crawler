@@ -31,16 +31,25 @@ def vital(doctor_list, config):
 
 
 def vital_crawler(doctor_row):
-    print(doctor_row)
-    attributes = doctor_row.split(',')
+    print(doctor_row.replace('\"',''))
+    attributes = doctor_row.replace('\"','').split(',')
     npi_id = attributes[0]
     doctor_name = attributes[1]
     specialisation = attributes[2]
+    cities = attributes[3].split('|')
     options = webdriver.ChromeOptions()
     options.accept_insecure_certs = True
     driver = webdriver.Chrome(options)
     site = 'vital'
     try:
+        print('doctor name '+ str(attributes[1])+' , cities - '+str(cities))
+        if len(attributes[3]) <= 0:
+            with file_lock:
+                write_failed([npi_id,doctor_name, specialisation, attributes[3], site, 'Not located in texas'])
+            return
+
+        if len(attributes) > 4 and site != attributes[-2].strip().lower():
+            return
 
         status, stat_code = find_doctor(driver, attributes)
         if not status:
@@ -171,9 +180,9 @@ def find_doctor(driver, doctor):
     #name = 'James V Stonecipher'
     name_split = doctor[1].split(' ')
 
-    cities = doctor[3].split(',')
+    cities = doctor[3].split('|')
 
-    specialisation = set([spec.lower() for spec in doctor[2].split(',')])
+    specialisation = set([spec.lower().strip() for spec in doctor[2].split('|')])
     try:
 
         driver.get(
@@ -190,7 +199,8 @@ def find_doctor(driver, doctor):
         if len(cities) > 0:
             city_search = searchBox.find_element(By.CSS_SELECTOR,
                                                  '.location .webmd-input__div .webmd-input__inner')
-            city = cities[0] + ", TX"
+            city = cities[0].strip() + ", TX"
+            city_search.clear()
             city_search.send_keys(city)
             city_search.submit()
         else:
@@ -206,14 +216,22 @@ def find_doctor(driver, doctor):
         profile_cards = []
         doctors_list = []
         print('search results count - ' + str(len(search_result)))
+        profile_dict = {}
         for row in search_result:
+            profile_dict[row.id] = driver.execute_script("return arguments[0].textContent;", row)
 
+        for row in search_result:
+            driver.execute_script("arguments[0].scrollIntoView();", row)
             summary = row.text.splitlines()
+            #state = driver.execute_script("return arguments[0].textContent;", row)
+            if len(summary) == 0:
+                continue
             print(summary[0])
-            print(summary[2])
+            print('hsas - ' + summary[1])
+            print('hsas2 - ' + summary[2])
             # and specialisation.lower() in summary[2].lower()
             if (name_split[0].lower() in summary[0].lower() and name_split[-1].lower() in summary[0].lower()
-                    and match_specs(summary[2], specialisation)):
+                    and match_specs(summary[1], specialisation)):
                 profile = row.find_elements(By.CSS_SELECTOR,
                                             '.webmd-card .webmd-card__body .card-content')
                 profile_cards.append(profile[0])

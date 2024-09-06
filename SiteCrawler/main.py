@@ -19,14 +19,14 @@ def start_crawling():
 
     doctors_list = read_file(configs)
     print('doctor list : {}'.format(doctors_list))
-
+    prepare_file_headers()
     if 'vital' in exec_order:
-        parallel_exec('vital', configs, doctors_list)
+        parallel_exec('vital', configs, doctors_list[1:])
 
     if 'webmd' in exec_order:
-        parallel_exec('webmd', configs, doctors_list)
+        parallel_exec('webmd', configs, doctors_list[1:])
     # print(doctors_list)
-    # prepare_file_headers()
+
     # name = 'Dr. Bobby Brice Niemann, MD'
     # if doctors_list[0] in name:
     #     print('present')
@@ -54,7 +54,7 @@ def parallel_exec(site, config, doctor_list):
 
         with ThreadPoolExecutor(thread_pool_size) as pool:
             if site == 'vital':
-                print('here')
+                print('parsing vital')
                 pool.map(vital_crawler, to_be_scraped)
             else:
                 pool.map(webmd_crawler, to_be_scraped)

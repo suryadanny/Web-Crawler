@@ -1,7 +1,7 @@
 import csv
 import time
 from concurrent.futures import ThreadPoolExecutor
-
+import re
 import requests
 import json
 from threading import Lock
@@ -66,6 +66,8 @@ def npi_detail_fetcher(configs):
                     csv_writer.writerows(nurse_list)
 
                 print(failed_ids)
+                #print(nurse_list)
+                #print(row_list)
 
                 with open('failed.csv', 'a', newline='') as csvfile:
                     csv_writer = csv.writer(csvfile,
@@ -115,11 +117,18 @@ def fetch_details_npi_api(args):
 
                 name_prefix = details['name_prefix'] if 'name_prefix' in details else ''
                 credentials = details['credential'] if 'credential' in details else ''
-                taxonomy = response_json['results'][0]['taxonomies'][0]['desc'].lower() if 'taxonomies' in response_json['results'][0] else ''
+                full_taxo = ''
+                taxonomy = ''
+                if 'taxonomies' in response_json['results'][0]:
+                    for tax in response_json['results'][0]['taxonomies']:
+                        if tax['primary']:
+                            taxonomy = tax['desc'].lower()
+                            taxonomy = taxonomy.replace(',', '|')
+                        full_taxo += ', '+tax['desc'].lower()
 
-                if ( 'dr' not in name_prefix.lower()) and (credentials.lower() not in credential_set) and ( 'nurse' not in taxonomy.lower()):
+                if ( 'dr' not in name_prefix.lower()) and not match_creds(credentials.lower(),credential_set) and ( 'nurse' not in full_taxo.lower()):
                     reason = taxonomy if len(taxonomy) > 0 else 'could not identify'
-                    failed_npi_ids.append([npi_id.strip(),reason])
+                    failed_npi_ids.append([npi_id.strip(),reason,credentials.lower()])
                     continue
 
                 name = details['first_name']
@@ -133,10 +142,10 @@ def fetch_details_npi_api(args):
                 if 'addresses' in response_json['results'][0]:
                     cities = {address['city'] for address in response_json['results'][0]['addresses'] if address['state'] == 'TX'}
 
-                if ('dr' in name_prefix.lower()) or (credentials.lower() not in credential_set):
-                    doctor_list.append([npi_id.strip(), name.strip(), taxonomy, ','.join(cities)])
+                if ('dr' in name_prefix.lower()) or match_creds(credentials.lower(), credential_set):
+                    doctor_list.append([npi_id.strip(), name.strip(), taxonomy, '|'.join(cities)])
                 elif 'nurse' in taxonomy:
-                    nurse_list.append([npi_id.strip(), name.strip(), taxonomy, ','.join(cities)])
+                    nurse_list.append([npi_id.strip(), name.strip(), taxonomy, '|'.join(cities)])
 
             else:
                 print('error occurred during GET request for npi id {} '.format(npi_id))
@@ -157,6 +166,13 @@ def fetch_details_npi_api(args):
     # print('releasing lock')
     # lock.release()
 
+def match_creds(credentials, cred_set):
+
+    for pattern in cred_set:
+        if re.search(pattern,credentials):
+            return True
+
+    return False
 
 def prep_doctor_list(file_name):
 
@@ -173,4 +189,4 @@ def prep_doctor_list(file_name):
     with open('failed.csv', 'a', newline='') as csvfile:
         csv_writer = csv.writer(csvfile,
                                 quotechar='"', quoting=csv.QUOTE_ALL)
-        csv_writer.writerow(['npi_id','reason'])
+        csv_writer.writerow(['npi_id','reason','credentials'])

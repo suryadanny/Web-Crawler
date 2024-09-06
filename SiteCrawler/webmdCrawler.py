@@ -4,19 +4,31 @@ from selenium import webdriver
 from selenium.webdriver import ActionChains
 from selenium.webdriver.common.by import By
 from threading import Lock
-
+from selenium.webdriver.common.keys import Keys
+import time
 file_lock = Lock()
 
 def webmd_crawler(doctor_row):
-    attributes = doctor_row.split(',')
+    attributes = doctor_row.replace('\"','').split(',')
     npi_id = attributes[0]
     doctor_name = attributes[1]
     specialisation = attributes[2]
+    cities = attributes[3].split('|')
+
     options = webdriver.ChromeOptions()
     options.accept_insecure_certs = True
     driver = webdriver.Chrome(options)
     site = 'webmd'
     try:
+
+        if len(attributes[3]) <= 0:
+            with file_lock:
+                write_failed([npi_id,doctor_name, specialisation, attributes[3], site, 'Not located in texas'])
+            return
+
+        if len(attributes) > 4 and site != attributes[-2].strip().lower():
+            return
+
         status, stat_code = find_doctor(driver, attributes)
         if not status:
             print('couldn\'t find doctor : {} in {} site '.format(doctor_name,site))
@@ -60,9 +72,15 @@ def webmd_crawler(doctor_row):
             practice = ''
             if len(practice_element) > 0:
                 practice = practice_element[0].text
-            address = location.find_element(By.CSS_SELECTOR, '.location-address').text + ', ' + location.find_element(
-                By.CSS_SELECTOR, '.location-geo').text
+            address_element = location.find_elements(By.CSS_SELECTOR, '.location-address')
+            geo_element = location.find_elements(By.CSS_SELECTOR, '.location-geo')
             mobile_list = location.find_elements(By.CSS_SELECTOR, '.location-phone .loc-coi-telep')
+            address = ''
+            if len(address_element)>0:
+                address += address_element[0].text
+
+            if len(geo_element) > 0:
+                address += ', ' + geo_element[0].text
 
             print('-------------------------------')
             print(' ')
@@ -115,9 +133,9 @@ def find_doctor(driver, doctor):
     name = 'Bobby Brice Niemann'
     #name = 'James V Stonecipher'
     name_split = doctor[1].split(' ')
-    cities = doctor[3].split(',')
+    cities = doctor[3].split('|')
 
-    specialisation = set([spec.lower() for spec in doctor[2].split(',')])
+    specialisation = set([spec.lower().strip() for spec in doctor[2].split('|')])
     try:
 
         driver.get(
@@ -133,10 +151,14 @@ def find_doctor(driver, doctor):
             city_search= searchBox.find_element(By.CSS_SELECTOR,
                                         '.location-input .webmd-typeahead2 .webmd-input__div .webmd-input__inner')
             city = cities[0] + ", TX"
+            city_search.send_keys(Keys.CONTROL + "a")
+            city_search.send_keys(Keys.DELETE)
             city_search.send_keys(city)
-            city_search.submit()
-        else:
-            search.submit()
+            time.sleep(1)
+
+
+
+        search.submit()
 
         driver.implicitly_wait(3)
         search_result = driver.find_elements(By.CSS_SELECTOR,
@@ -146,7 +168,7 @@ def find_doctor(driver, doctor):
         doctors_list = []
         print('search results count - ' + str(len(search_result)))
         for row in search_result:
-
+            driver.execute_script("arguments[0].scrollIntoView();", row)
             summary = row.text.splitlines()
             print(summary[1])
             print(summary[2])
