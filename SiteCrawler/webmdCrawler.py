@@ -6,10 +6,12 @@ from selenium.webdriver.common.by import By
 from threading import Lock
 from selenium.webdriver.common.keys import Keys
 import time
+
 file_lock = Lock()
 
+
 def webmd_crawler(doctor_row):
-    attributes = doctor_row.replace('\"','').split(',')
+    attributes = doctor_row.replace('\"', '').split(',')
     npi_id = attributes[0]
     doctor_name = attributes[1]
     specialisation = attributes[2]
@@ -20,21 +22,21 @@ def webmd_crawler(doctor_row):
     driver = webdriver.Chrome(options)
     site = 'webmd'
     try:
+        if len(attributes) > 4 and (site != attributes[-2].strip().lower() or attributes[-1] != 'retryable'):
+            return
 
         if len(attributes[3]) <= 0:
             with file_lock:
-                write_failed([npi_id,doctor_name, specialisation, attributes[3], site, 'Not located in texas'])
-            return
-
-        if len(attributes) > 4 and site != attributes[-2].strip().lower():
+                write_failed([npi_id, doctor_name, specialisation, attributes[3], site, 'Not located in texas'])
             return
 
         status, stat_code = find_doctor(driver, attributes)
         if not status:
-            print('couldn\'t find doctor : {} in {} site '.format(doctor_name,site))
-            stat_reason = 'couldn\'t find doctor : {} in {}'.format(doctor_name, site) if stat_code == 0 else 'retryable'
+            print('couldn\'t find doctor : {} in {} site '.format(doctor_name, site))
+            stat_reason = 'couldn\'t find doctor : {} in {}'.format(doctor_name,
+                                                                    site) if stat_code == 0 else 'retryable'
             with file_lock:
-                write_failed([npi_id,doctor_name, specialisation, attributes[3], site, stat_reason])
+                write_failed([npi_id, doctor_name, specialisation, attributes[3], site, stat_reason])
             return
 
         driver.implicitly_wait(3)
@@ -76,7 +78,7 @@ def webmd_crawler(doctor_row):
             geo_element = location.find_elements(By.CSS_SELECTOR, '.location-geo')
             mobile_list = location.find_elements(By.CSS_SELECTOR, '.location-phone .loc-coi-telep')
             address = ''
-            if len(address_element)>0:
+            if len(address_element) > 0:
                 address += address_element[0].text
 
             if len(geo_element) > 0:
@@ -105,16 +107,20 @@ def webmd_crawler(doctor_row):
 
 
     except Exception as ex:
-        print(str(ex))
+
+        print('main function -' + str(ex))
+        print(type(ex))
         with file_lock:
-            write_failed([npi_id,doctor_name,specialisation, attributes[3], site, 'retryable error like timeout'])
+            if 'disconnected:' in str(ex):
+                write_failed([npi_id, doctor_name, specialisation, attributes[3], site, 'retryable'])
+            else:
+                write_failed([npi_id, doctor_name, specialisation, attributes[3], site, str(ex)[:200]])
 
     driver.close()
 
 
-
 def write_failed(row):
-    with open('failed_scrape.csv', 'a', newline='') as csvfile:
+    with open('failed_scrape_update.csv', 'a', newline='') as csvfile:
         csv_writer = csv.writer(csvfile,
                                 quotechar='"', quoting=csv.QUOTE_ALL)
         csv_writer.writerow(row)
@@ -125,7 +131,6 @@ def write_to_file(ratings_list):
         csv_writer = csv.writer(csvfile,
                                 quotechar='"', quoting=csv.QUOTE_ALL)
         csv_writer.writerows(ratings_list)
-
 
 
 def find_doctor(driver, doctor):
@@ -148,15 +153,13 @@ def find_doctor(driver, doctor):
         #search.submit()
 
         if len(cities) > 0:
-            city_search= searchBox.find_element(By.CSS_SELECTOR,
-                                        '.location-input .webmd-typeahead2 .webmd-input__div .webmd-input__inner')
+            city_search = searchBox.find_element(By.CSS_SELECTOR,
+                                                 '.location-input .webmd-typeahead2 .webmd-input__div .webmd-input__inner')
             city = cities[0] + ", TX"
             city_search.send_keys(Keys.CONTROL + "a")
             city_search.send_keys(Keys.DELETE)
             city_search.send_keys(city)
             time.sleep(1)
-
-
 
         search.submit()
 

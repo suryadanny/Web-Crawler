@@ -1,12 +1,14 @@
 # from webParser import connect_site
 import csv
+import datetime
 from concurrent.futures import ThreadPoolExecutor
-
+import os
 from webmdCrawler import webmd_crawler
 from vitalCrawler import vital_crawler
 from threading import Thread
 from jproperties import Properties
 from utils import prepare_file_headers
+from utils import prepare_failed_headers
 from npiCrawler import npi_detail_fetcher
 
 
@@ -19,7 +21,7 @@ def start_crawling():
 
     doctors_list = read_file(configs)
     print('doctor list : {}'.format(doctors_list))
-    prepare_file_headers()
+    #prepare_file_headers()
     if 'vital' in exec_order:
         parallel_exec('vital', configs, doctors_list[1:])
 
@@ -27,11 +29,25 @@ def start_crawling():
         parallel_exec('webmd', configs, doctors_list[1:])
     # print(doctors_list)
 
+    replace_failed_scrape()
+
     # name = 'Dr. Bobby Brice Niemann, MD'
     # if doctors_list[0] in name:
     #     print('present')
     # vitalCrawler(doctors_list)
     # webMdCrawler(doctors_list)
+
+
+def replace_failed_scrape():
+    try:
+        if os.path.isfile('failed_scrape.csv'):
+            timestamp = str(datetime.datetime.now()).replace(' ', '_').replace('.', '_').replace(':', '_')
+            os.rename('failed_scrape.csv', 'failed_scrape_old_' + timestamp + '.csv')
+        if os.path.isfile('failed_scrape_update.csv'):
+            os.rename('failed_scrape_update.csv', 'failed_scrape.csv')
+    except Exception as ex:
+        print(str(ex))
+        print('Exception occurred while renaming file')
 
 
 def parallel_exec(site, config, doctor_list):
@@ -65,6 +81,11 @@ def read_file(configs):
     doctors_list = []
     with open(file_name) as f:
         doctors_list = f.read().splitlines()
+
+    if 'failed' not in file_name:
+        prepare_file_headers()
+    prepare_failed_headers()
+
     return doctors_list
 
 
@@ -86,4 +107,3 @@ if __name__ == '__main__':
     #     print(type(ex))
 
     print('webmd crawler')
-

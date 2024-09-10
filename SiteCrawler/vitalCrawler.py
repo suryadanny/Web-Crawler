@@ -43,12 +43,13 @@ def vital_crawler(doctor_row):
     site = 'vital'
     try:
         print('doctor name '+ str(attributes[1])+' , cities - '+str(cities))
+
+        if len(attributes) > 4 and (site != attributes[-2].strip().lower() or attributes[-1] != 'retryable'):
+            return
+
         if len(attributes[3]) <= 0:
             with file_lock:
                 write_failed([npi_id,doctor_name, specialisation, attributes[3], site, 'Not located in texas'])
-            return
-
-        if len(attributes) > 4 and site != attributes[-2].strip().lower():
             return
 
         status, stat_code = find_doctor(driver, attributes)
@@ -143,15 +144,19 @@ def vital_crawler(doctor_row):
 
 
     except Exception as ex:
-        print(str(ex))
+        print('main function -' + str(ex))
+        print(type(ex))
         with file_lock:
-            write_failed([npi_id, doctor_name, specialisation, attributes[3], site, 'retryable error like timeout'])
+            if 'disconnected:' in str(ex):
+                write_failed([npi_id, doctor_name, specialisation, attributes[3], site, 'retryable'])
+            else:
+                write_failed([npi_id, doctor_name, specialisation, attributes[3], site, str(ex)[:200]])
 
     driver.close()
 
 
 def write_failed(row):
-    with open('failed_scrape.csv', 'a', newline='') as csvfile:
+    with open('failed_scrape_update.csv', 'a', newline='') as csvfile:
         csv_writer = csv.writer(csvfile,
                                 quotechar='"', quoting=csv.QUOTE_ALL)
         csv_writer.writerow(row)
